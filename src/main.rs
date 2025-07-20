@@ -72,7 +72,7 @@ async fn main() {
                 &pool,
                 "down.sql",
                 Path::new(&args.migrations_dir),
-                run_migrations,
+                revert_migrations,
             )
             .await
             .expect("could not execute revert migration");
