@@ -139,13 +139,9 @@ async fn run_one(path: &Path, pool: &Pool<Postgres>) -> Result<(), sqlx::Error> 
     if !exists {
         // create
         let mut tx = pool.begin().await?;
-        let statements: Vec<&str> = buff
-            .split(";")
-            .map(|e| e.trim())
-            .filter(|e| !e.is_empty())
-            .collect();
+        let statements: Vec<String> = parse_statements(&buff);
         for statement in statements {
-            sqlx::query(statement).execute(&mut *tx).await?;
+            sqlx::query(&statement).execute(&mut *tx).await?;
         }
         // record migration
         sqlx::query("INSERT INTO _migrations (name) VALUES ($1)")
@@ -183,13 +179,9 @@ async fn revert_one(path: &Path, pool: &Pool<Postgres>) -> Result<(), sqlx::Erro
     if exists {
         // create
         let mut tx = pool.begin().await?;
-        let statements: Vec<&str> = buff
-            .split(";")
-            .map(|e| e.trim())
-            .filter(|e| !e.is_empty())
-            .collect();
+        let statements: Vec<String> = parse_statements(&buff);
         for statement in statements {
-            sqlx::query(statement).execute(&mut *tx).await?;
+            sqlx::query(&statement).execute(&mut *tx).await?;
         }
         // record migration
         sqlx::query("DELETE FROM _migrations WHERE name = $1")
@@ -203,4 +195,33 @@ async fn revert_one(path: &Path, pool: &Pool<Postgres>) -> Result<(), sqlx::Erro
             "migration {name} did not exist"
         )))
     }
+}
+
+fn parse_statements(buffer: &str) -> Vec<String> {
+    let mut inside_quote = false;
+    let mut statements: Vec<String> = Vec::with_capacity(16);
+    let mut statement: Vec<char> = Vec::with_capacity(256);
+    for c in buffer.chars() {
+        match c {
+            '\'' => {
+                inside_quote = if inside_quote { false } else { true };
+                statement.push(c);
+            }
+            ';' => {
+                statement.push(c);
+                if !inside_quote {
+                    statements.push(statement.iter().collect());
+                    statement = Vec::with_capacity(256);
+                }
+            }
+            _ => {
+                statement.push(c);
+            }
+        }
+    }
+    // cleanup the last statement
+    if !statement.is_empty() {
+        statements.push(statement.iter().collect());
+    }
+    statements
 }
